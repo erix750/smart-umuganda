@@ -2,19 +2,21 @@
 	const key = "smart-umuganda-system-v1";
 	const textSizeKey = "smart-umuganda-text-size-v1";
 	const seed = window.SMART_UMUGANDA_SEED || { activities: [], tasks: [] };
-	const read = () => { try { return JSON.parse(localStorage.getItem(key)) || {}; } catch { return {}; } };
-	const old = read();
+	const defaultMessage = "Baturage, turabatumira mu muganda rusange wo ku wa Gatandatu. Tuzahurira ku biro by'akagari saa moya za mu gitondo. Twese hamwe twubake u Rwanda rwacu.";
 	const state = {
-		citizens: old.citizens || [{ id: "c1", name: "Umutoni Marie", phone: "+250 788 000 001", district: "Gasabo", sector: "Remera", cell: "Rukiri I", village: "Amahoro", age: 28, category: "Adult", joined: "2026-09-10" }],
-		activities: old.activities || seed.activities.map((item) => ({ ...item })),
-		tasks: old.tasks || seed.tasks.map((item) => ({ ...item })),
-		attendance: old.attendance || [{ id: "p1", citizen: "Umutoni Marie", activity: "Gufasha abatishoboye", date: "2026-10-03", checkIn: "08:52", status: "Present" }],
-		reports: old.reports || [{ id: "r1", activity: "Gufasha abatishoboye", location: "Kacyiru, Gasabo", date: "2026-10-03", participants: 124, workDone: "Inzu 4 zarasanwe, imiryango 12 yahawe ubufasha.", evidence: [], status: "Submitted", submittedBy: "Umuyobozi wa Kacyiru" }],
-		role: old.role || "citizen", name: old.name || "Umutoni Marie", message: old.message || "Baturage, turabatumira mu muganda rusange wo ku wa Gatandatu. Tuzahurira ku biro by'akagari saa moya za mu gitondo. Twese hamwe twubake u Rwanda rwacu."
+		citizens: [{ id: "c1", name: "Umutoni Marie", phone: "+250 788 000 001", district: "Gasabo", sector: "Remera", cell: "Rukiri I", village: "Amahoro", age: 28, category: "Adult", joined: "2026-09-10" }],
+		activities: seed.activities.map((item) => ({ ...item })),
+		tasks: seed.tasks.map((item) => ({ ...item })),
+		attendance: [{ id: "p1", citizen: "Umutoni Marie", activity: "Gufasha abatishoboye", date: "2026-10-03", checkIn: "08:52", status: "Present" }],
+		reports: [{ id: "r1", activity: "Gufasha abatishoboye", location: "Kacyiru, Gasabo", date: "2026-10-03", participants: 124, workDone: "Inzu 4 zarasanwe, imiryango 12 yahawe ubufasha.", evidence: [], status: "Submitted", submittedBy: "Umuyobozi wa Kacyiru" }],
+		role: "citizen", name: "Umutoni Marie", message: defaultMessage
 	};
+	try { localStorage.removeItem(key); } catch {}
 	let language = "en";
 	let view = "dashboard";
+	let authenticatedLeader = null;
 	let toastTimer;
+	let stateSyncQueue = Promise.resolve();
 	const titles = { dashboard: "Home / Dashboard", registration: "Citizen registration", activities: "Umuganda activities", participation: "Participation & check-in", tasks: "Community tasks", reports: "Reports & evidence", leaders: "Leader dashboard", national: "Head admin / Minister" };
 	const esc = (value) => String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 	const icon = (name) => `<i data-lucide="${name}"></i>`;
@@ -22,7 +24,33 @@
 	const dateLabel = (value) => value ? new Intl.DateTimeFormat("en", { day: "numeric", month: "short", year: "numeric" }).format(new Date(`${value}T12:00:00`)) : "—";
 	const orderedActivities = () => [...state.activities].sort((a, b) => a.date.localeCompare(b.date));
 	const upcoming = () => orderedActivities().filter((item) => item.date >= today() && item.status !== "Completed");
-	function save() { try { localStorage.setItem(key, JSON.stringify(state)); } catch { toast("Could not save changes in browser storage."); } }
+	function save() {
+		if (!authenticatedLeader) return;
+		const payload = JSON.stringify({ citizens: state.citizens, activities: state.activities, tasks: state.tasks, attendance: state.attendance, reports: state.reports, message: state.message });
+		stateSyncQueue = stateSyncQueue.then(async () => {
+			const response = await fetch("/api/state", { method: "PUT", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: payload });
+			if (!response.ok) {
+				const result = await response.json().catch(() => ({}));
+				throw new Error(result.error || "Could not save shared community data.");
+			}
+		}).catch((error) => toast(error.message || "Could not save shared community data."));
+	}
+	async function loadSharedState() {
+		const response = await fetch("/api/state", { credentials: "same-origin", cache: "no-store" });
+		if (!response.ok) {
+			const result = await response.json().catch(() => ({}));
+			throw new Error(result.error || "Could not load shared community data.");
+		}
+		const shared = await response.json();
+		if (!shared) return false;
+		state.citizens = shared.citizens;
+		state.activities = shared.activities;
+		state.tasks = shared.tasks;
+		state.attendance = shared.attendance;
+		state.reports = shared.reports;
+		state.message = shared.message;
+		return true;
+	}
 	function toast(message) { const el = document.querySelector("#system-toast"); el.textContent = message; el.classList.add("visible"); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove("visible"), 2600); }
 	function icons() { if (window.lucide) window.lucide.createIcons(); }
 	function heading(kicker, title, description, button = "") { return `<div class="page-heading"><div><p class="system-kicker">${kicker}</p><h1>${title}</h1><p class="page-description">${description}</p></div>${button}</div>`; }
@@ -64,9 +92,24 @@
 		return `${heading("NATIONAL OVERVIEW", "Head administrator / Minister", "A cross-community view of participation, work completed and local reporting.", `<button class="system-button secondary" data-action="export">${icon("download")} Export overview</button>`)}<div class="overview-stats">${stat("Citizens registered", state.citizens.length, `${sectors} sectors represented`, "users-round", "green")}${stat("Activities scheduled", upcoming().length, "Upcoming system-wide", "calendar-days", "peach")}${stat("Citizens checked in", present, "Present or late", "clipboard-check", "blue")}${stat("Reports submitted", state.reports.length, "Documented activities", "file-check-2", "yellow")}</div><div class="national-grid"><section class="system-panel"><div class="panel-heading"><div><p class="system-kicker">ACTIVITY DELIVERY</p><h2>Activity summary</h2></div><span class="record-count">October 2026</span></div><div class="national-bars">${state.activities.slice(0, 6).map((a) => `<div class="national-bar-row"><span>${esc(a.name)}</span><div class="national-bar-track"><i style="width:${Math.min(Math.max(Number(a.participants) || 10, 10), 100)}%"></i></div><strong>${Number(a.participants) || 0}</strong></div>`).join("")}</div></section><section class="system-panel national-summary"><p class="system-kicker">COMMUNITY PULSE</p><h2>Coverage at a glance</h2><div class="coverage-number">${sectors}<small>sectors represented</small></div><div class="coverage-stat"><span>Completed activities</span><strong>${state.activities.filter((a) => a.status === "Completed").length}</strong></div><div class="coverage-stat"><span>Evidence photos</span><strong>${state.reports.reduce((n, r) => n + (r.evidence || []).length, 0)}</strong></div><div class="coverage-stat"><span>Participation entries</span><strong>${state.attendance.length}</strong></div></section></div><section class="system-panel table-panel"><div class="panel-heading"><div><p class="system-kicker">SUBMITTED BY LOCAL LEADERS</p><h2>National report register</h2></div></div><div class="table-scroll"><table><thead><tr><th>Activity</th><th>Location</th><th>Date</th><th>Participants</th><th>Evidence</th><th>Status</th></tr></thead><tbody>${state.reports.map((r) => `<tr><td><strong>${esc(r.activity)}</strong><small>${esc(r.workDone)}</small></td><td>${esc(r.location)}</td><td>${dateLabel(r.date)}</td><td>${r.participants}</td><td>${(r.evidence || []).length} photos</td><td><span class="status-tag done">${esc(r.status)}</span></td></tr>`).join("")}</tbody></table></div></section>`;
 	}
 	const viewRenderers = { dashboard, registration, activities: activitiesView, participation, tasks, reports, leaders, national };
+		const protectedViews = new Set(["registration", "participation", "reports", "leaders", "national"]);
+		function canOpenView(nextView) {
+			if (!protectedViews.has(nextView) || authenticatedLeader) return true;
+			toast("Sign in with an authorized leader account to open this workspace.");
+			return false;
+		}
+		function resetCommunityState() {
+			state.citizens = [{ id: "c1", name: "Umutoni Marie", phone: "+250 788 000 001", district: "Gasabo", sector: "Remera", cell: "Rukiri I", village: "Amahoro", age: 28, category: "Adult", joined: "2026-09-10" }];
+			state.activities = seed.activities.map((item) => ({ ...item }));
+			state.tasks = seed.tasks.map((item) => ({ ...item }));
+			state.attendance = [{ id: "p1", citizen: "Umutoni Marie", activity: "Gufasha abatishoboye", date: "2026-10-03", checkIn: "08:52", status: "Present" }];
+			state.reports = [{ id: "r1", activity: "Gufasha abatishoboye", location: "Kacyiru, Gasabo", date: "2026-10-03", participants: 124, workDone: "Inzu 4 zarasanwe, imiryango 12 yahawe ubufasha.", evidence: [], status: "Submitted", submittedBy: "Umuyobozi wa Kacyiru" }];
+			state.message = defaultMessage;
+		}
 	function render() {
-		if (view === "leaders" && state.role === "citizen") view = "dashboard";
-		if (view === "national" && state.role !== "minister") view = "dashboard";
+		if (protectedViews.has(view) && !authenticatedLeader) view = "dashboard";
+		if (view === "leaders" && (!authenticatedLeader || authenticatedLeader.role === "citizen")) view = "dashboard";
+		if (view === "national" && (!authenticatedLeader || authenticatedLeader.role !== "minister")) view = "dashboard";
 		document.querySelector("#view-container").innerHTML = (viewRenderers[view] || dashboard)();
 		document.querySelector("#current-section").textContent = titles[view];
 		document.querySelectorAll(".system-nav-link").forEach((button) => button.classList.toggle("active", button.dataset.view === view));
@@ -75,11 +118,30 @@
 	function setRole(role, name) {
 		state.role = role; state.name = name || state.name;
 		document.querySelector("#user-name").textContent = state.name;
+		document.querySelector("#avatar-initials").textContent = state.name.split(/\s+/).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
 		document.querySelector("#user-role").textContent = ({ citizen: "Citizen", leader: "Sector / cell leader", minister: "Head administrator / Minister" })[role];
 		document.querySelector("#role-label").textContent = ({ citizen: "CITIZEN PORTAL", leader: "LOCAL LEADER WORKSPACE", minister: "NATIONAL ADMINISTRATION" })[role];
 		document.querySelectorAll(".leader-nav").forEach((el) => el.classList.toggle("visible", role !== "citizen"));
 		document.querySelectorAll(".head-nav").forEach((el) => el.classList.toggle("visible", role === "minister"));
-		save();
+		document.querySelector("#profile-photo-button").hidden = !authenticatedLeader;
+		document.querySelector("#logout-button").hidden = !authenticatedLeader;
+	}
+	let profilePictureUrl = "";
+	async function loadProfilePicture() {
+		const image = document.querySelector("#profile-picture");
+		if (profilePictureUrl) URL.revokeObjectURL(profilePictureUrl);
+		profilePictureUrl = "";
+		image.hidden = true;
+		if (!authenticatedLeader?.hasProfilePicture) return;
+		try {
+			const response = await fetch("/api/profile-picture", { credentials: "same-origin", cache: "no-store" });
+			if (!response.ok) return;
+			profilePictureUrl = URL.createObjectURL(await response.blob());
+			image.src = profilePictureUrl;
+			image.hidden = false;
+		} catch {
+			toast("Could not load your profile picture.");
+		}
 	}
 	function showFormDialog(title, fields, callback) {
 		const dialog = document.createElement("dialog"); dialog.className = "system-dialog";
@@ -101,18 +163,23 @@
 		const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = "smart-umuganda-reports.csv"; link.click(); URL.revokeObjectURL(url); toast("Overview exported as CSV.");
 	}
 
-	document.querySelector(".system-nav").addEventListener("click", (event) => { const button = event.target.closest("[data-view]"); if (!button) return; if (button.dataset.view === "leaders" && state.role === "citizen" || button.dataset.view === "national" && state.role !== "minister") { toast("Use Leader access to open this workspace."); return; } view = button.dataset.view; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
+	document.querySelector(".system-nav").addEventListener("click", (event) => { const button = event.target.closest("[data-view]"); if (!button) return;
+		if (!canOpenView(button.dataset.view)) return;
+		view = button.dataset.view; render(); window.scrollTo({ top: 0, behavior: "smooth" }); });
 	document.querySelector("#view-container").addEventListener("click", (event) => {
 		const go = event.target.closest("[data-go]"); const action = event.target.closest("[data-action]"); const checkin = event.target.closest("[data-checkin]");
-		if (go) { view = go.dataset.go; render(); }
-		if (action?.dataset.action === "new-activity") createActivity();
-		if (action?.dataset.action === "new-task") createTask();
-		if (action?.dataset.action === "export") exportCsv();
-		if (checkin) { view = "participation"; render(); document.querySelector('[name="activityId"]').value = checkin.dataset.checkin; }
+		if (go) { if (!canOpenView(go.dataset.go)) return; view = go.dataset.go; render(); }
+		if (action?.dataset.action === "new-activity" && authenticatedLeader) createActivity();
+		if (action?.dataset.action === "new-task" && authenticatedLeader) createTask();
+		if (action?.dataset.action === "export" && authenticatedLeader?.role === "minister") exportCsv();
+		if (checkin && canOpenView("participation")) { view = "participation"; render(); document.querySelector('[name="activityId"]').value = checkin.dataset.checkin; }
 		if (action?.dataset.action === "sms-preview") { const text = document.querySelector("#community-message").value.trim(); state.message = text; save(); showFormDialog("SMS message preview", `<div class="sms-preview"><span>${icon("smartphone")} KINYARWANDA · SMS</span><p>${esc(text)}</p><small>${text.length} / 320 characters</small></div><p class="integration-warning">Preview only. No SMS has been sent. Delivery needs an SMS gateway on a secure server.</p>`, () => {}); }
 	});
 	document.querySelector("#view-container").addEventListener("submit", (event) => {
 		event.preventDefault(); const form = event.target; if (!form.reportValidity()) return; const data = new FormData(form);
+		if (form.id === "citizen-form" || form.id === "checkin-form" || form.id === "report-form") {
+			if (!authenticatedLeader) { toast("Sign in with an authorized leader account before editing community records."); return; }
+		}
 		if (form.id === "citizen-form") { state.citizens.push({ id: `c${Date.now()}`, name: data.get("name").trim(), phone: data.get("phone").trim(), age: Number(data.get("age")), category: data.get("category"), district: data.get("district").trim(), sector: data.get("sector").trim(), cell: data.get("cell").trim(), village: data.get("village").trim(), joined: today(), smsConsent: data.has("smsConsent") }); save(); render(); toast("Citizen registered on this device."); }
 		if (form.id === "checkin-form") { const person = state.citizens.find((p) => p.id === data.get("citizenId")); const activity = state.activities.find((a) => a.id === data.get("activityId")); if (!person || !activity) return; state.attendance.push({ id: `p${Date.now()}`, citizen: person.name, activity: activity.name, date: activity.date, checkIn: data.get("checkIn"), status: data.get("status") }); activity.participants = Number(activity.participants || 0) + 1; save(); render(); toast("Attendance recorded."); }
 		if (form.id === "report-form") { const activity = state.activities.find((a) => a.id === data.get("activityId")); const evidence = [...form.elements.evidence.files].map((file) => file.name); const report = { id: `r${Date.now()}`, activity: activity?.name || "Activity", location: data.get("location").trim(), date: activity?.date || today(), participants: Number(data.get("participants")), workDone: data.get("workDone").trim(), evidence, status: "Submitted", submittedBy: state.name }; state.reports.push(report); if (activity) { activity.status = "Completed"; activity.participants = report.participants; activity.workDone = report.workDone; activity.evidence = evidence; } save(); render(); toast("Report saved. Photo filenames are recorded locally; upload needs server storage."); }
@@ -128,6 +195,116 @@
 		if (event.target.matches("[data-task]")) { const task = state.tasks.find((t) => t.id === event.target.dataset.task); if (task) { task.status = event.target.value; save(); render(); toast("Task status updated."); } }
 	});
 	const roleDialog = document.querySelector("#role-dialog");
+	const roleForm = document.querySelector("#role-form");
+	roleForm.addEventListener("submit", async (event) => {
+		event.preventDefault();
+		const errorMessage = document.querySelector("#login-error");
+		const submitButton = roleForm.querySelector('[type="submit"]');
+		const formData = new FormData(roleForm);
+		errorMessage.hidden = true;
+		submitButton.disabled = true;
+		try {
+			const response = await fetch("/api/login", {
+				method: "POST",
+				credentials: "same-origin",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ username: formData.get("username"), password: formData.get("password") })
+			});
+			const result = await response.json();
+			if (!response.ok) throw new Error(result.error || "Sign in failed.");
+			authenticatedLeader = result;
+			setRole(result.role, result.name);
+			await loadProfilePicture();
+			try { if (!await loadSharedState()) save(); } catch (error) { toast(error.message); }
+			view = result.role === "minister" ? "national" : "leaders";
+			roleForm.reset();
+			roleDialog.close();
+			render();
+			toast("Signed in securely.");
+		} catch (error) {
+			errorMessage.textContent = error instanceof TypeError ? "Secure sign-in is unavailable. Open this app through its server." : error.message;
+			errorMessage.hidden = false;
+		} finally {
+			submitButton.disabled = false;
+		}
+	});
+	document.querySelector("#open-role-access").addEventListener("click", () => {
+		if (authenticatedLeader) {
+			view = authenticatedLeader.role === "minister" ? "national" : "leaders";
+			render();
+		} else roleDialog.showModal();
+	});
+	async function restoreLeaderSession() {
+		try {
+			const response = await fetch("/api/session", { credentials: "same-origin", cache: "no-store" });
+			if (!response.ok) return;
+			const leader = await response.json();
+			authenticatedLeader = leader;
+			setRole(leader.role, leader.name);
+			await loadProfilePicture();
+			try { if (!await loadSharedState()) save(); } catch (error) { toast(error.message); }
+			view = leader.role === "minister" ? "national" : "leaders";
+			render();
+		} catch {
+			// The static preview has no auth server; it stays in citizen mode.
+		}
+	}
+	roleDialog.addEventListener("click", (event) => { if (event.target === roleDialog || event.target.closest("[data-close-dialog]")) roleDialog.close(); });
+	roleDialog.addEventListener("close", () => { document.querySelector("#login-error").hidden = true; });
+	const profilePhotoButton = document.querySelector("#profile-photo-button");
+	const profilePhotoInput = document.querySelector("#profile-photo-input");
+	profilePhotoButton.addEventListener("click", () => {
+		if (document.querySelector("#profile-picture").hidden) profilePhotoInput.click();
+		else if (window.confirm("Remove your profile picture? Choose Cancel to replace it.")) {
+			fetch("/api/profile-picture", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ remove: true }) }).then((response) => {
+				if (!response.ok) throw new Error("Could not remove your profile picture.");
+				authenticatedLeader.hasProfilePicture = false;
+				loadProfilePicture();
+				toast("Profile picture removed.");
+			}).catch((error) => toast(error.message));
+		}
+	});
+	profilePhotoInput.addEventListener("change", async () => {
+		const file = profilePhotoInput.files[0];
+		profilePhotoInput.value = "";
+		if (!file) return;
+		if (!file.type.startsWith("image/") || file.size > 8_000_000) {
+			toast("Choose an image smaller than 8 MB.");
+			return;
+		}
+		try {
+			const bitmap = await createImageBitmap(file);
+			if (bitmap.width > 6000 || bitmap.height > 6000) throw new Error("Image dimensions are too large.");
+			const scale = Math.min(1, 512 / Math.max(bitmap.width, bitmap.height));
+			const canvas = document.createElement("canvas");
+			canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+			canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+			canvas.getContext("2d").drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+			bitmap.close();
+			const image = canvas.toDataURL("image/jpeg", 0.82);
+			const response = await fetch("/api/profile-picture", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image }) });
+			const result = response.status === 204 ? {} : await response.json();
+			if (!response.ok) throw new Error(result.error || "Could not save your profile picture.");
+			authenticatedLeader.hasProfilePicture = true;
+			await loadProfilePicture();
+			toast("Profile picture updated.");
+		} catch (error) {
+			toast(error.message || "Could not process that image.");
+		}
+	});
+	document.querySelector("#logout-button").addEventListener("click", async () => {
+		try {
+			await fetch("/api/logout", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: "{}" });
+		} catch {
+			toast("Could not contact the server. Your sign-in may remain active until it expires.");
+		}
+		authenticatedLeader = null;
+		await loadProfilePicture();
+		resetCommunityState();
+		view = "dashboard";
+		setRole(state.role, state.name);
+		render();
+	});
 	const textSizeSelect = document.querySelector("#text-size-select");
 	const savedTextSize = localStorage.getItem(textSizeKey) || "1";
 	textSizeSelect.value = ["1", "1.15", "1.3"].includes(savedTextSize) ? savedTextSize : "1";
@@ -136,10 +313,6 @@
 		document.querySelector(".system-root").style.zoom = textSizeSelect.value;
 		try { localStorage.setItem(textSizeKey, textSizeSelect.value); } catch { toast("Text size will reset when you close this page."); }
 	});
-	document.querySelector("#open-role-access").addEventListener("click", () => roleDialog.showModal());
-	roleDialog.addEventListener("click", (event) => { if (event.target === roleDialog || event.target.closest("[data-close-dialog]")) roleDialog.close(); });
-	document.querySelector("#role-form").addEventListener("submit", (event) => { event.preventDefault(); const data = new FormData(event.currentTarget); state.role = data.get("role"); state.name = data.get("name").trim(); view = state.role === "minister" ? "national" : state.role === "leader" ? "leaders" : "dashboard"; setRole(state.role, state.name); roleDialog.close(); render(); toast("Demo workspace opened. Production authentication requires a server."); });
-	document.querySelector("#logout-button").addEventListener("click", () => { state.role = "citizen"; state.name = "Umutoni Marie"; view = "dashboard"; setRole(state.role, state.name); render(); toast("Returned to the citizen portal."); });
 	document.querySelector("#language-select").addEventListener("change", (event) => { language = event.target.value; const text = seed.translations?.[language] || {}; document.querySelectorAll("[data-i18n]").forEach((element) => { if (text[element.dataset.i18n]) element.textContent = text[element.dataset.i18n]; }); document.documentElement.lang = language; render(); });
-	setRole(state.role, state.name); render();
+	setRole(state.role, state.name); render(); restoreLeaderSession();
 })();
