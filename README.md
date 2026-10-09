@@ -26,6 +26,10 @@ npm start
 
 Open `http://localhost:3000`. Leaders sign in using the email/password created in Supabase Auth. In production, set the same environment values privately on the HTTPS Node.js host; set `NODE_ENV=production`. If HTTPS terminates at a trusted reverse proxy, also set `TRUST_PROXY=1`.
 
+## Deploy the secure app
+
+The GitHub Pages URL is only a static preview. To run leader sign-in and Supabase APIs, create a Render Blueprint from this GitHub repository and use the included [`render.yaml`](render.yaml). When Render prompts for `SUPABASE_URL` and `SUPABASE_ANON_KEY`, enter the values from Supabase Project Settings > API. Keep those values in Render's environment settings, not in Git. After deploy, use the Render `onrender.com` URL for the secure app.
+
 ## Security boundary
 
 Leader passwords are verified by Supabase Auth. The server keeps Supabase access/refresh tokens in HttpOnly, SameSite=Strict cookies and forwards the user's JWT to Postgres/Storage. Row-level security allows only active leader profiles to access community data; avatar files are private and scoped to the owning leader. No service-role key is used in the app.

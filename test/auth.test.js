@@ -60,6 +60,9 @@ test("Supabase Auth gates shared data and private profile pictures", async (cont
 	context.after(() => new Promise((resolve) => server.close(resolve)));
 	await new Promise((resolve) => server.once("listening", resolve));
 	const origin = `http://127.0.0.1:${server.address().port}`;
+	const health = await fetch(`${origin}/healthz`);
+	assert.equal(health.status, 200);
+	assert.deepEqual(await health.json(), { status: "ok", supabaseConfigured: true });
 
 	assert.equal((await fetch(`${origin}/api/session`)).status, 401);
 	assert.equal((await fetch(`${origin}/api/state`)).status, 401);

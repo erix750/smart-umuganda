@@ -29,6 +29,7 @@ function createApp({ staticDir = __dirname, secureCookies = process.env.NODE_ENV
 		crossOriginResourcePolicy: { policy: "cross-origin" }
 	}));
 	app.use(express.json({ limit: "1400kb", strict: true }));
+	app.get("/healthz", (request, response) => response.json({ status: "ok", supabaseConfigured: Boolean(supabaseUrl && supabaseAnonKey) }));
 	const accessCookie = secureCookies ? "__Host-sm-umuganda-access" : "sm-umuganda-access";
 	const refreshCookie = secureCookies ? "__Secure-sm-umuganda-refresh" : "sm-umuganda-refresh";
 	const accessCookieOptions = { httpOnly: true, secure: secureCookies, sameSite: "strict", path: "/", maxAge: 60 * 60 * 1000 };
