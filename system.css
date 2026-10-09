@@ -6,13 +6,15 @@
 	--paper: #f7f8f3;
 	--green: #286145;
 	--deep-green: #204b35;
+	--blue: #286a95;
+	--blue-soft: #e6f0f6;
 	--orange: #cb7048;
 	--sans: "DM Sans", sans-serif;
 	--display: "Manrope", "DM Sans", sans-serif;
 }
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-body { margin: 0; color: var(--ink); background: var(--paper); font: 15px var(--sans); -webkit-font-smoothing: antialiased; }
+body { margin: 0; color: var(--ink); background: linear-gradient(rgb(247 248 243 / 72%), rgb(247 248 243 / 72%)), url("https://thumb.wikimedia.org/wikipedia/commons/thumb/b/b5/Nyungwe_National_Park.jpg/1280px-Nyungwe_National_Park.jpg") center / cover fixed; font: 15px var(--sans); -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; }
 button, a { -webkit-tap-highlight-color: transparent; }
 button { color: inherit; }
@@ -51,6 +53,7 @@ svg { width: 18px; height: 18px; stroke-width: 1.8; }
 .system-breadcrumb svg { width: 13px; height: 13px; }
 .system-breadcrumb strong { color: var(--ink); font-weight: 600; }
 .system-top-actions { gap: 17px; }
+.system-root :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
 .system-text-size { display: flex; align-items: center; gap: 5px; color: #526055; }
 .system-text-size svg { width: 15px; height: 15px; }
 .system-text-size select { max-width: 118px; min-height: 31px; padding: 0 6px; border: 1px solid #dbe5da; border-radius: 4px; color: var(--ink); background: #fff; font-size: 10px; cursor: pointer; }
@@ -75,7 +78,7 @@ svg { width: 18px; height: 18px; stroke-width: 1.8; }
 .overview-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 11px; margin-bottom: 17px; }
 .overview-stat { min-width: 0; padding: 13px 14px 12px; border: 1px solid rgb(32 44 36 / 4%); border-radius: 5px; animation: arrive .4s both; }
 .overview-stat:nth-child(2) { animation-delay: .04s; }.overview-stat:nth-child(3) { animation-delay: .08s; }.overview-stat:nth-child(4) { animation-delay: .12s; }
-.overview-stat.green { background: #eaf2e9; }.overview-stat.peach { background: #fbede4; }.overview-stat.blue { background: #eaf0ed; }.overview-stat.yellow { background: #f4f0df; }
+.overview-stat.green { background: #eaf2e9; }.overview-stat.peach { background: #fbede4; }.overview-stat.blue { background: var(--blue-soft); }.overview-stat.blue .overview-stat-icon { color: var(--blue); }.overview-stat.yellow { background: #f4f0df; }
 .overview-stat-head { display: flex; align-items: center; justify-content: space-between; gap: 5px; color: #667269; font-size: 9px; }
 .overview-stat-icon { display: grid; flex: 0 0 auto; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: var(--green); background: rgb(255 255 255 / 70%); }
 .overview-stat-icon svg { width: 14px; height: 14px; }
